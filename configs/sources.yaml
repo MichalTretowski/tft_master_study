@@ -1,0 +1,9 @@
+# Konfiguracja źródeł danych - klucze API i parametry pobierania
+
+data_range:
+  start: "2017-08-01"
+  end: "2026-01-01"
+
+coins:
+  - BTC
+  - ETH

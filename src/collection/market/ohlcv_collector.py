@@ -23,10 +23,10 @@ import ccxt
 import pandas as pd
 
 EXCHANGE = "binance"
-SYMBOLS = ["BTC/USTD", "ETH/USDT"]
+SYMBOLS = ["BTC/USDT", "ETH/USDT"]
 TIMEFRAME = "1h"
 SINCE = "2017-08-01T00:00:00Z"
-UNTIL = "2026-01*01T00:00:00Z"
+UNTIL = "2026-01-01T00:00:00Z"
 LIMIT = 1000                        # Maksymalna liczba świec na request
 RAW_DIR = Path("data/raw/ohlcv")
 
@@ -78,6 +78,7 @@ class OHLCVCollector:
             if not candles:
                 break
             all_candles.extend(candles)
+            cursor = candles[-1][0] + 1
             time.sleep(self.exchange.rateLimit / 1000)
         
         df = self._to_dataframe(all_candles)

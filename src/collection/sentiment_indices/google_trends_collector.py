@@ -45,9 +45,7 @@ class GoogleTrendsCollector:
                  ) -> None:
         self.pytrends = TrendReq(hl=hl, 
                                  tz=tz, 
-                                 timeout=(10, 30), 
-                                 retries=3, 
-                                 backoff_factor=0.5
+                                 timeout=(10, 30)
                                  )
         self.raw_dir = raw_dir
         self.raw_dir.mkdir(parents=True, 

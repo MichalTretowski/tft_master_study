@@ -163,8 +163,7 @@ class DerivativesCollector:
 
             consecutive_empty = 0
             all_rows.extend(rows)
-            oldest_ts = int(rows[-1]["timestamp"])
-            cursor_ms = oldest_ts + 3_600_000 
+            cursor_ms = max(int(r["timestamp"]) for r in rows) + 3_600_000 
             time.sleep(0.1)
 
         if not all_rows:
@@ -233,8 +232,7 @@ class DerivativesCollector:
 
             consecutive_empty = 0
             all_rows.extend(rows)
-            oldest_ts = int(rows[-1]["timestamp"])
-            cursor_ms = oldest_ts + 3_600_000
+            cursor_ms = max(int(r["timestamp"]) for r in rows) + 3_600_000
             time.sleep(0.1)
 
         if not all_rows:

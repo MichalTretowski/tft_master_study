@@ -11,7 +11,10 @@ from typing import Literal
 
 import pandas as pd
 
-AggStrategy = Literal["top_k_by_engagement", "all", "sample"]
+AggStrategy = Literal["top_k_by_engagement", 
+                      "all", 
+                      "sample"
+                      ]
 
 
 def aggregate_texts_to_windows(
@@ -74,8 +77,9 @@ def aggregate_texts_to_windows(
         records.append({
             "timestamp": window_start,
             "texts": texts,
-            "n_texts": len(texts)
-        })
+            "n_texts": len(texts),
+            "n_texts_raw": len(group)
+            })
 
     result = pd.DataFrame(records)
     if result.empty:

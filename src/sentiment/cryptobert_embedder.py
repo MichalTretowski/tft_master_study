@@ -118,6 +118,9 @@ class CryptoBERTEmbedder:
                                         )
             record: dict = {"timestamp": timestamp}
 
+            if "n_texts_raw" in windows_df.columns:
+                record["n_texts_raw"] = int(row["n_texts_raw"])
+
             if "scores" in encoded:
                 scores = encoded["scores"]  # (N, 3)
                 record["sentiment_bearish_mean"] = float(scores[:, 0].mean())

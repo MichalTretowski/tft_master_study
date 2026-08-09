@@ -209,7 +209,11 @@ def merge_reddit_sources(source_frames: dict[str, pd.DataFrame]) -> pd.DataFrame
         "comments_btc": 2.0,
         "comments_cc": 2.0
         }
-    
+
+    n_texts_col = (
+        "n_tests_raw"
+        if all("n_texts_raw" in df.columns for df in source_frames.values()) 
+        )
 
     all_indices = pd.DatetimeIndex(
         pd.concat([pd.Series(index=df.index, dtype=float) for df in source_frames.values()])
@@ -232,7 +236,7 @@ def merge_reddit_sources(source_frames: dict[str, pd.DataFrame]) -> pd.DataFrame
                         1.0
                         )
         score_col = "sentiment_score"
-        n_texts_col = "n_texts"
+
 
         if score_col not in df.columns:
             print(f"[Merge] Brak kolumny '{score_col}' w {label} — pomijam")

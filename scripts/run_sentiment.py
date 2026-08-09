@@ -211,7 +211,7 @@ def merge_reddit_sources(source_frames: dict[str, pd.DataFrame]) -> pd.DataFrame
         }
 
     n_texts_col = (
-        "n_tests_raw"
+        "n_texts_raw"
         if all("n_texts_raw" in df.columns for df in source_frames.values()) 
         )
 

@@ -212,7 +212,8 @@ def merge_reddit_sources(source_frames: dict[str, pd.DataFrame]) -> pd.DataFrame
 
     n_texts_col = (
         "n_texts_raw"
-        if all("n_texts_raw" in df.columns for df in source_frames.values()) 
+        if all("n_texts_raw" in df.columns for df in source_frames.values())
+        else "n_texts" 
         )
 
     all_indices = pd.DatetimeIndex(

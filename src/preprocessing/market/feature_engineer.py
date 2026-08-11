@@ -1,8 +1,8 @@
 """
 
-Obliczanie wskaźników technicznych na danych 4h.
+Obliczanie wskaźników technicznych na danych 4h lub 1d.
 
-Wszystkie cechy są obliczane na danych 4h (interwał treningowy modelu).
+Wszystkie cechy są obliczane na danych 4h lub 1d (interwał treningowy modelu).
 Używana biblioteka: pandas-ta.
 
 Grupy cech:
@@ -34,16 +34,20 @@ PROCESSED_DIR = Path("data/processed/features")
 
 class FeatureEngineer:
     def __init__(self, 
-                 processed_dir: Path = PROCESSED_DIR
+                 processed_dir: Path = PROCESSED_DIR,
+                 bars_per_day: int = 6,
+                 timeframe: str = "4h"
                  ) -> None:
         self.processed_dir = processed_dir
+        self.bars_per_day = bars_per_day
+        self.timeframe = timeframe
 
     def build_features(self, 
                        df: pd.DataFrame, 
                        symbol: str
                        ) -> pd.DataFrame:
         """
-        Metoda oblicza wszystkie wskaźniki techniczne dla DataFrame 4h.
+        Metoda oblicza wszystkie wskaźniki techniczne dla DataFrame 4h/1d.
         Wejście: df z kolumnami [open, high, low, close, volume].
         Wyjście: df + kolumny cech.
         """
@@ -60,7 +64,7 @@ class FeatureEngineer:
         # Usunięcie NaN z okresu warmup wskaźników
         df = df.dropna()
 
-        path = self.processed_dir / f"{symbol}_4h_features.parquet"
+        path = self.processed_dir / f"{symbol}_{self.timeframe}_features.parquet"
         df.to_parquet(path)
         print(f"[Features] {symbol}: {len(df)} wierszy × {len(df.columns)} cech -> {path}")
         return df
@@ -123,8 +127,9 @@ class FeatureEngineer:
                   )
         return df
 
-    @staticmethod
-    def _add_volatility_features(df: pd.DataFrame) -> pd.DataFrame:
+    def _add_volatility_features(self,
+                                 df: pd.DataFrame
+                                 ) -> pd.DataFrame:
         if not HAS_PANDAS_TA:
             return df
         df.ta.atr(length=14, 
@@ -135,15 +140,19 @@ class FeatureEngineer:
                      append=True
                      )
 
-
+        bpd = self.bars_per_day
+        ann = np.sqrt(bpd * 365)
         log_ret = np.log(df["close"] / df["close"].shift(1))
-        df["hist_vol_24"] = log_ret.rolling(6).std() * np.sqrt(6 * 365)
-        df["hist_vol_7d"] = log_ret.rolling(42).std() * np.sqrt(42 * 365)
-        df["hist_vol_30d"] = log_ret.rolling(180).std() * np.sqrt(180 * 365)
+        if bpd > 1:
+            df["hist_vol_24"] = log_ret.rolling(bpd).std() * ann
+        df["hist_vol_7d"] = log_ret.rolling(7 * bpd).std() * ann
+        df["hist_vol_30d"] = log_ret.rolling(30 * bpd).std() * ann
         return df
 
-    @staticmethod
-    def _add_volume_features(df: pd.DataFrame) -> pd.DataFrame:
+
+    def _add_volume_features(self,
+                             df: pd.DataFrame
+                             ) -> pd.DataFrame:
         if not HAS_PANDAS_TA:
             return df
         df.ta.obv(append=True)
@@ -151,8 +160,9 @@ class FeatureEngineer:
         vol_sma = df["volume"].rolling(20).mean()
         df["volume_ratio"] = df["volume"] / vol_sma.replace(0, np.nan)
 
+        w = 4 * self.bars_per_day
         typical_price = (df["high"] + df["low"] + df["close"]) / 3
-        df["vwap_4d"] = (typical_price * df["volume"]).rolling(24).sum() / df["volume"].rolling(24).sum()
+        df["vwap_4d"] = (typical_price * df["volume"]).rolling(w).sum() / df["volume"].rolling(w).sum()
         df["price_to_vwap"] = df["close"] / df["vwap_4d"].replace(0, np.nan)
         return df
 
@@ -182,15 +192,19 @@ class FeatureEngineer:
         df["dow_cos"] = np.cos(2 * np.pi * dow / 7)
         return df
 
-    @staticmethod
-    def _add_multi_scale_returns(df: pd.DataFrame) -> pd.DataFrame:
+
+    def _add_multi_scale_returns(self,
+                                 df: pd.DataFrame
+                                 ) -> pd.DataFrame:
         """Zwroty na różnych horyzontach"""
         df = df.copy()
-        for periods, label in [(1, "4h"), 
-                               (6, "1d"), 
-                               (42, "7d"), 
-                               (90, "15d"), 
-                               (180, "30d")
+        bpd = self.bars_per_day
+        if bpd > 1:
+            df["return_4h"] = df["close"].pct_change(1)    
+        for days, label in [(1, "1d"), 
+                               (7, "7d"), 
+                               (15, "15d"), 
+                               (30, "30d")
                                ]:
-            df[f"return_{label}"] = df["close"].pct_change(periods)
+            df[f"return_{label}"] = df["close"].pct_change(days * bpd)
         return df

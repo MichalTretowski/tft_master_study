@@ -4,10 +4,10 @@ Skrypt odpowiedzialny za cały preprocessing danych
 od raw data do gotowych datasetow train/val/test.
 
 Pipeline:
-  1. OHLCV 1h  -> czyszczenie, fill luk, resample 4h
-  2. FeatureEngineer -> wskazniki techniczne na 4h
-  3. Zrodla makro/correlated/onchain -> resample do 4h (ffill)
-  4. TimeAligner -> join wszystkich zrodel na master index 4h
+  1. OHLCV 1h  -> czyszczenie, fill luk, resample 4h/1d
+  2. FeatureEngineer -> wskazniki techniczne na 4h/1d
+  3. Zrodla makro/correlated/onchain -> resample do 4h/1d (ffill)
+  4. TimeAligner -> join wszystkich zrodel na master index 4h/1d
   5. Target -> kierunek za 6 swiec (24h) z dead zone 0.3%
   6. Zapis -> data/processed/datasets/{coin}_{split}.parquet
 
@@ -24,7 +24,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.preprocessing.alignment.time_aligner import TimeAligner
+from src.preprocessing.alignment.time_aligner import TimeAligner, SPLIT_DATES
 from src.preprocessing.macro.macro_preprocessor import MacroPreprocessor
 from src.preprocessing.market.feature_engineer import FeatureEngineer
 from src.preprocessing.market.ohlcv_preprocessor import OHLCVPreprocessor
@@ -32,16 +32,42 @@ from src.utils.logger import get_logger
 
 logger = get_logger("preprocess")
 
+TIMEFRAMES = {
+    "4h": ("4h", 6),
+    "1d": ("1D", 1)
+    }
+
+_SENT_SCORES = ["reddit_sentiment_score",
+                "sentiment_score_combined",
+                "twitter_sentiment_score",
+                "news_sentiment_score"
+                ]
+_SENT_COUNTS = ["reddit_n_texts",
+                "twitter_n_texts",
+                "news_n_texts"
+                ]
+_SENT_BASES = ["reddit_sentiment_score",
+               "sentiment_score_combined"
+               ]
+
 RAW        = Path("data/raw")
 PROCESSED  = Path("data/processed")
 FEATURES   = PROCESSED / "features"
 DATASETS   = PROCESSED / "datasets"
 
 
-def step_ohlcv(coins: list[str]) -> dict[str, pd.DataFrame]:
-    """Funkcja czyści zbiór OHLCV 1h i buduje wskazniki techniczne 4h"""
-    prep = OHLCVPreprocessor(FEATURES)
-    eng = FeatureEngineer(FEATURES)
+def step_ohlcv(coins: list[str],
+               tf: str,
+               bpd: int
+               ) -> dict[str, pd.DataFrame]:
+    """Funkcja czyści zbiór OHLCV 1h i buduje wskazniki techniczne 4h lub 1d"""
+    prep = OHLCVPreprocessor(FEATURES,
+                             timeframe=tf
+                             )
+    eng = FeatureEngineer(FEATURES,
+                          bars_per_day=bpd,
+                          timeframe=tf
+                          )
     result: dict[str, pd.DataFrame] = {}
 
     for coin in coins:
@@ -50,13 +76,17 @@ def step_ohlcv(coins: list[str]) -> dict[str, pd.DataFrame]:
             logger.warning(f"Brak {raw_path} - pomijam {coin}")
             continue
 
-        logger.info(f"[OHLCV] {coin}: czyszczenie i resample 1h->4h...")
+        logger.info(f"[OHLCV] {coin}: czyszczenie i resample 1h->{tf}...")
         df_raw = pd.read_parquet(raw_path)
-        dfs = prep.process(df_raw, coin)
-        df_4h = dfs["4h"]
+        dfs = prep.process(df_raw, 
+                           coin
+                           )
+        df_tf = dfs[tf]
 
-        logger.info(f"[OHLCV] {coin}: feature engineering ({len(df_4h)} swiec 4h)...")
-        df_feat = eng.build_features(df_4h, coin)
+        logger.info(f"[OHLCV] {coin}: feature engineering ({len(df_tf)} świec {tf}...")
+        df_feat = eng.build_features(df_tf, 
+                                     coin
+                                     )
         result[coin] = df_feat
 
     return result
@@ -79,15 +109,21 @@ def _fix_index(df: pd.DataFrame) -> pd.DataFrame:
     return df.sort_index()
 
 
-def step_macro(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
-    """Funkcja przetwarza zrodla makro do 4h"""
-    mp = MacroPreprocessor(FEATURES)
+def step_macro(master_index: pd.DatetimeIndex,
+               tf: str,
+               bpd: int
+               ) -> dict[str, pd.DataFrame]:
+    """Funkcja przetwarza zrodla makro do 4h/1d"""
+    mp = MacroPreprocessor(FEATURES,
+                           bars_per_day=bpd,
+                           timeframe=tf
+                           )
     sources: dict[str, pd.DataFrame] = {}
 
 
     fred_path = RAW / "macro" / "fred_macro_raw.parquet"
     if fred_path.exists():
-        logger.info("[Macro] FRED: ffill do 4h...")
+        logger.info(f"[Macro] FRED: ffill do {tf}...")
         df = _fix_index(pd.read_parquet(fred_path))
         df = mp.process_and_save(df, 
                                  "fred_macro", 
@@ -102,27 +138,27 @@ def step_macro(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
 
     fg_path = RAW / "macro" / "fear_greed_index.parquet"
     if fg_path.exists():
-        logger.info("[Macro] Fear&Greed: ffill do 4h...")
+        logger.info(f"[Macro] Fear&Greed: ffill do {tf}...")
         df = _fix_index(pd.read_parquet(fg_path))
         df = df[["fear_greed_value"]].rename(columns={"fear_greed_value": "fear_greed"})
-        df_4h = mp.resample_to_4h(df, 
+        df_tf = mp.resample_to_target(df, 
                                   method="ffill", 
                                   target_index=master_index
                                   )
-        df_4h["fear_greed"] = df_4h["fear_greed"].fillna(50.0)
+        df_tf["fear_greed"] = df_tf["fear_greed"].fillna(50.0)
         FEATURES.mkdir(parents=True, 
                        exist_ok=True
                        )
-        df_4h.to_parquet(FEATURES / "fear_greed_4h.parquet")
-        logger.info(f"[Macro] Fear&Greed: {df_4h['fear_greed'].notna().sum()} wierszy 4h")
-        sources["fear_greed"] = df_4h
+        df_tf.to_parquet(FEATURES / f"fear_greed_{tf}.parquet")
+        logger.info(f"[Macro] Fear&Greed: {df_tf['fear_greed'].notna().sum()} wierszy {tf}")
+        sources["fear_greed"] = df_tf
     else:
         logger.warning("Brak Fear&Greed - pomijam")
 
 
     cot_path = RAW / "institutional" / "cot_btc_futures.parquet"
     if cot_path.exists():
-        logger.info("[Macro] COT: ffill do 4h...")
+        logger.info(f"[Macro] COT: ffill do {tf}...")
         df = _fix_index(pd.read_parquet(cot_path))
         df = mp.process_and_save(df, 
                                  "cot", 
@@ -132,7 +168,7 @@ def step_macro(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
                                  )
         sources["cot"] = df
     else:
-        logger.warning("Brak COT — pomijam")
+        logger.warning("Brak COT - pomijam")
 
 
     trends_files = {
@@ -163,25 +199,32 @@ def step_macro(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
             logger.warning(f"Brak Google Trends {fname} - pomijam")
 
     if trends_frames:
-        logger.info("[Macro] Google Trends: ffill do 4h...")
+        logger.info(f"[Macro] Google Trends: ffill do {tf}...")
         combined = pd.concat(trends_frames, 
-                             axis=1
+                             axis=1,
+                             sort=False
                              ).sort_index()
-        df_4h = mp.resample_to_4h(combined, 
+        df_tf = mp.resample_to_target(combined, 
                                   method="ffill", 
                                   target_index=master_index
                                   )
-        df_4h = df_4h.fillna(50.0)
-        df_4h.to_parquet(FEATURES / "google_trends_4h.parquet")
-        logger.info(f"[Macro] Google Trends: {len(df_4h)} wierszy 4h, {len(df_4h.columns)} kolumn")
-        sources["google_trends"] = df_4h
+        df_tf = df_tf.fillna(50.0)
+        df_tf.to_parquet(FEATURES / f"google_trends_{tf}.parquet")
+        logger.info(f"[Macro] Google Trends: {len(df_tf)} wierszy {tf}, {len(df_tf.columns)} kolumn")
+        sources["google_trends"] = df_tf
 
     return sources
 
 
-def step_correlated(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
+def step_correlated(master_index: pd.DatetimeIndex,
+                    tf: str,
+                    bpd: int
+                    ) -> dict[str, pd.DataFrame]:
     """Funkcja przetwarza aktywa skorelowane"""
-    mp = MacroPreprocessor(FEATURES)
+    mp = MacroPreprocessor(FEATURES,
+                           bars_per_day=bpd,
+                           timeframe=tf
+                           )
     corr_dir = RAW / "correlated"
     sources: dict[str, pd.DataFrame] = {}
 
@@ -190,7 +233,7 @@ def step_correlated(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
         logger.warning("Brak plikow correlated - pomijam")
         return sources
 
-    logger.info(f"[Correlated] {len(tickers)} instrumentow -> 4h...")
+    logger.info(f"[Correlated] {len(tickers)} instrumentow -> {tf}...")
     frames: list[pd.DataFrame] = []
 
     for name in tickers:
@@ -207,21 +250,28 @@ def step_correlated(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
         return sources
 
     combined = pd.concat(frames, 
-                         axis=1
+                         axis=1,
+                         sort=False
                          ).sort_index()
-    df_4h = mp.resample_to_4h(combined, 
+    df_tf = mp.resample_to_target(combined, 
                               method="ffill", 
                               target_index=master_index
                               )
-    df_4h.to_parquet(FEATURES / "correlated_4h.parquet")
-    logger.info(f"[Correlated] {len(frames)} instrumentow, {len(df_4h)} wierszy 4h")
-    sources["correlated"] = df_4h
+    df_tf.to_parquet(FEATURES / f"correlated_{tf}.parquet")
+    logger.info(f"[Correlated] {len(frames)} instrumentow, {len(df_tf)} wierszy {tf}")
+    sources["correlated"] = df_tf
     return sources
 
 
-def step_onchain(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
+def step_onchain(master_index: pd.DatetimeIndex,
+                 tf: str,
+                 bpd:int
+                 ) -> dict[str, pd.DataFrame]:
     """Funkcja przetwarza dane on-chain"""
-    mp = MacroPreprocessor(FEATURES)
+    mp = MacroPreprocessor(FEATURES,
+                           bars_per_day=bpd,
+                           timeframe=tf
+                           )
     sources: dict[str, pd.DataFrame] = {}
 
     for coin in ["BTC", "ETH"]:
@@ -230,23 +280,29 @@ def step_onchain(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
             logger.warning(f"Brak on-chain {coin} ({path}) - pomijam")
             continue
 
-        logger.info(f"[OnChain] {coin}: ffill do 4h...")
+        logger.info(f"[OnChain] {coin}: ffill do {tf}...")
         df = _fix_index(pd.read_parquet(path))
         df.columns = [f"onchain_{coin.lower()}_{c}" for c in df.columns]
-        df_4h = mp.resample_to_4h(df, 
+        df_tf = mp.resample_to_target(df, 
                                   method="ffill", 
                                   target_index=master_index
                                   )
-        df_4h.to_parquet(FEATURES / f"onchain_{coin}_4h.parquet")
-        logger.info(f"[OnChain] {coin}: {len(df_4h)} wierszy 4h")
-        sources[f"onchain_{coin}"] = df_4h
+        df_tf.to_parquet(FEATURES / f"onchain_{coin}_{tf}.parquet")
+        logger.info(f"[OnChain] {coin}: {len(df_tf)} wierszy {tf}")
+        sources[f"onchain_{coin}"] = df_tf
 
     return sources
 
 
-def step_derivatives(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
+def step_derivatives(master_index: pd.DatetimeIndex,
+                     tf: str,
+                     bpd: int
+                     ) -> dict[str, pd.DataFrame]:
     """Funkcja przetwarza derywaty"""
-    mp = MacroPreprocessor(FEATURES)
+    mp = MacroPreprocessor(FEATURES,
+                           bars_per_day=bpd,
+                           timeframe=tf
+                           )
     deriv_dir = RAW / "derivatives"
     sources: dict[str, pd.DataFrame] = {}
 
@@ -255,22 +311,19 @@ def step_derivatives(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
 
         fr_path = deriv_dir / f"{coin}_funding_rates_binance.parquet"
         if fr_path.exists():
-            df = pd.read_parquet(fr_path)
-            df = _fix_index(df)
+            df = _fix_index(pd.read_parquet(fr_path))
             df = df.rename(columns={"funding_rate": f"funding_rate_{coin.lower()}"})
             frames.append(df)
 
         oi_path = deriv_dir / f"{coin}_open_interest_1h_bybit.parquet"
         if oi_path.exists():
-            df = pd.read_parquet(oi_path)
-            df = _fix_index(df)
+            df = _fix_index(pd.read_parquet(oi_path))
             df = df.rename(columns={"open_interest": f"open_interest_{coin.lower()}"})
             frames.append(df)
 
         ls_path = deriv_dir / f"{coin}_long_short_ratio_1h_bybit.parquet"
         if ls_path.exists():
-            df = pd.read_parquet(ls_path)
-            df = _fix_index(df)
+            df = _fix_index(pd.read_parquet(ls_path))
             df.columns = [f"{c}_{coin.lower()}" for c in df.columns]
             frames.append(df)
 
@@ -278,15 +331,17 @@ def step_derivatives(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
             continue
 
         combined = pd.concat(frames, 
-                             axis=1
+                             axis=1,
+                             sort=False
                              ).sort_index()
-        df_4h = mp.resample_to_4h(combined, 
+        df_tf = mp.resample_to_target(combined, 
                                   method="ffill", 
                                   target_index=master_index
                                   )
-        df_4h.to_parquet(FEATURES / f"derivatives_{coin}_4h.parquet")
-        logger.info(f"[Derivatives] {coin}: {len(frames)} zrodel, {len(df_4h)} wierszy 4h")
-        sources[f"derivatives_{coin}"] = df_4h
+
+        df_tf.to_parquet(FEATURES / f"derivatives_{coin}_{tf}.parquet")
+        logger.info(f"[Derivatives] {coin}: {len(frames)} zrodel, {len(df_tf)} wierszy {tf}")
+        sources[f"derivatives_{coin}"] = df_tf
 
     return sources
 
@@ -333,7 +388,9 @@ _HALVING_DATES = [
     ]
 
 
-def step_event_calendar(master_index: pd.DatetimeIndex) -> pd.DataFrame:
+def step_event_calendar(master_index: pd.DatetimeIndex,
+                        tf: str
+                        ) -> pd.DataFrame:
     """
     Funkcja buduje kolumny kalendarza eventów makro na master_index 4h:
       - is_fed_meeting_day: 1 jezeli dzien posiedzenia FOMC
@@ -348,7 +405,7 @@ def step_event_calendar(master_index: pd.DatetimeIndex) -> pd.DataFrame:
         [pd.Timestamp(d, tz="UTC") for d in _FOMC_DATES]
         ).normalize()
     df["is_fed_meeting_day"] = master_index.normalize().isin(fomc_days).astype(float)
-    logger.info(f"[Calendar] FOMC: {int(df['is_fed_meeting_day'].sum())} swiec 4h oznaczonych")
+    logger.info(f"[Calendar] FOMC: {int(df['is_fed_meeting_day'].sum())} swiec {tf} oznaczonych")
 
 
     fred_path = RAW / "macro" / "fred_macro_raw.parquet"
@@ -364,7 +421,7 @@ def step_event_calendar(master_index: pd.DatetimeIndex) -> pd.DataFrame:
                     release_days = release_days.union(series.index[:1].normalize())
                 df[flag_col] = master_index.normalize().isin(release_days).astype(float)
                 n = int(df[flag_col].sum())
-                logger.info(f"[Calendar] {col_name}: {n} swiec 4h oznaczonych (release days)")
+                logger.info(f"[Calendar] {col_name}: {n} swiec {tf} oznaczonych (release days)")
 
 
     def _days_to_next_halving(ts: pd.Timestamp) -> float:
@@ -383,20 +440,22 @@ def step_event_calendar(master_index: pd.DatetimeIndex) -> pd.DataFrame:
     FEATURES.mkdir(parents=True, 
                    exist_ok=True
                    )
-    df.to_parquet(FEATURES / "event_calendar_4h.parquet")
-    logger.info(f"[Calendar] Zapisano event_calendar_4h.parquet ({len(df)} wierszy)")
+    df.to_parquet(FEATURES / f"event_calendar_{tf}.parquet")
+    logger.info(f"[Calendar] Zapisano event_calendar_{tf}.parquet ({len(df)} wierszy)")
     return df
 
 
 
-def step_sentiment(master_index: pd.DatetimeIndex) -> pd.DataFrame | None:
+def step_sentiment(master_index: pd.DatetimeIndex,
+                   freq: str
+                   ) -> pd.DataFrame | None:
     """
     Funkcja wczytuje wyniki z CryptoBERT i wyrównuje do master_index.
     Plik generuje scripts/run_sentiment.py - uruchom go przed preprocessingiem.
     Jeśli plik nie istnieje, pipeline kontynuuje z kolumnami sentymentu = 0
     (ColumnMapper w dataset.py uzupełnia brakujące kolumny zerami).
     """
-    sentiment_path = Path("data/processed/sentiment_embeddings/sentiment_combined_4h.parquet")
+    sentiment_path = PROCESSED / "sentiment_embeddings" / "sentiment_combined_4h.parquet"
     if not sentiment_path.exists():
         logger.warning(
             "Brak pliku sentymentu - uruchom najpierw: python scripts/run_sentiment.py\n"
@@ -408,43 +467,72 @@ def step_sentiment(master_index: pd.DatetimeIndex) -> pd.DataFrame | None:
     df.index = pd.to_datetime(df.index, 
                               utc=True
                               )
-    df = df.reindex(master_index).ffill().fillna(0.0)
-    logger.info(f"[Sentiment] {len(df)} wierszy 4h, {len(df.columns)} kolumn sentymentu")
-    return df
 
+    scores = [c for c in _SENT_SCORES if c in df.columns]
+    counts = [c for c in _SENT_COUNTS if c in df.columns]
 
-def step_market_supplement(master_index: pd.DatetimeIndex) -> dict[str, pd.DataFrame]:
+    out = pd.concat([
+        df[scores].resample(freq).mean(),
+        df[counts].resample(freq).sum()
+        ], axis=1
+        )
+
+    bpd = 6 if freq == "4h" else 1
+    for base in _SENT_BASES:
+        if base not in out.columns:
+            continue
+        for lag in [1, 6, 24, 42]:
+            out[f"{base}_lag{lag}"] = out[base].shift(lag)
+        for days, label in [(1, "1d"),
+                            (7, "7d"),
+                            (30, "30d")
+                            ]:
+            out[f"{base}_roll_{label}"] = out[base].rolling(days * bpd,
+                                                            min_periods=1
+                                                            ).mean()
+    out = out.reindex(master_index).ffill().fillna(0.0)
+    logger.info(f"[Sentiment] {len(out)} wierszy, {len(out.columns)} kolumn sentymentu")
+    return out
+    
+
+def step_market_supplement(master_index: pd.DatetimeIndex,
+                           tf: str,
+                           bpd: int
+                           ) -> dict[str, pd.DataFrame]:
     """Funkcja przetwarza stablecoin supply i market dominance"""
-    mp = MacroPreprocessor(FEATURES)
+    mp = MacroPreprocessor(FEATURES,
+                           bars_per_day=bpd,
+                           timeframe=tf
+                           )
     sources: dict[str, pd.DataFrame] = {}
 
     stablecoin_path = RAW / "onchain" / "stablecoin_supply_daily.parquet"
     if stablecoin_path.exists():
-        logger.info("[Market] Stablecoin supply: ffill do 4h...")
+        logger.info(f"[Market] Stablecoin supply: ffill do {tf}...")
         df = _fix_index(pd.read_parquet(stablecoin_path))
-        df_4h = mp.resample_to_4h(df, 
+        df_tf = mp.resample_to_target(df, 
                                   method="ffill", 
                                   target_index=master_index
                                   )
-        df_4h = df_4h.fillna(0.0)
-        df_4h.to_parquet(FEATURES / "stablecoin_supply_4h.parquet")
-        logger.info(f"[Market] Stablecoin supply: {len(df_4h)} wierszy 4h")
-        sources["stablecoin_supply"] = df_4h
+        df_tf = df_tf.fillna(0.0)
+        df_tf.to_parquet(FEATURES / f"stablecoin_supply_{tf}.parquet")
+        logger.info(f"[Market] Stablecoin supply: {len(df_tf)} wierszy {tf}")
+        sources["stablecoin_supply"] = df_tf
     else:
         logger.warning("Brak stablecoin_supply_daily.parquet - pomijam")
 
     dominance_path = RAW / "onchain" / "market_dominance_daily.parquet"
     if dominance_path.exists():
-        logger.info("[Market] Market dominance: ffill do 4h...")
+        logger.info(f"[Market] Market dominance: ffill do {tf}...")
         df = _fix_index(pd.read_parquet(dominance_path))
-        df_4h = mp.resample_to_4h(df, 
+        df_tf = mp.resample_to_target(df, 
                                   method="ffill", 
                                   target_index=master_index
                                   )
-        df_4h = df_4h.ffill().bfill()
-        df_4h.to_parquet(FEATURES / "market_dominance_4h.parquet")
-        logger.info(f"[Market] Market dominance: {len(df_4h)} wierszy 4h")
-        sources["market_dominance"] = df_4h
+        df_tf = df_tf.ffill().bfill()
+        df_tf.to_parquet(FEATURES / f"market_dominance_{tf}.parquet")
+        logger.info(f"[Market] Market dominance: {len(df_tf)} wierszy {tf}")
+        sources["market_dominance"] = df_tf
     else:
         logger.warning("Brak market_dominance_daily.parquet - pomijam")
 
@@ -462,10 +550,12 @@ def step_build_datasets(
     event_calendar: pd.DataFrame | None = None,
     market_sources: dict[str, pd.DataFrame] | None = None,
     sentiment_source: pd.DataFrame | None = None,
-    master_index: pd.DatetimeIndex | None = None
+    master_index: pd.DatetimeIndex | None = None,
+    datasets_dir: Path | None = None,
+    bpd: int = 6
     ) -> None:
     """Funkcja łączy wszystkie zrodla, dodaje target, zapisuje splity"""
-    aligner = TimeAligner(DATASETS)
+    aligner = TimeAligner(datasets_dir if datasets_dir is not None else DATASETS)
     if master_index is None:
         master_index = aligner.build_master_index()
 
@@ -498,10 +588,16 @@ def step_build_datasets(
                                         master_index
                                         )
 
+        train_slice = aligned[SPLIT_DATES["train_start"]:SPLIT_DATES["train_end"]]
+        dead = [c for c in aligned.columns if train_slice[c].isna().all()]
+        if dead:
+            logger.warning(f"[Dataset] {coin}: kolumny bez danych w treningu - usuwam {dead}")
+            aligned = aligned.drop(columns=dead)
+
         aligned = aligner.add_target(
             aligned,
             price_col="close",
-            horizon_bars=6,
+            horizon_bars=bpd,
             dead_zone_pct=0.003
             )
 
@@ -536,12 +632,20 @@ def parse_args() -> argparse.Namespace:
                    action="store_true",
                    help="Tylko OHLCV features"
                    )
+    p.add_argument("--freq",
+                   default="4h",
+                   choices=["4h", "1d"]
+                   )
     return p.parse_args()
 
 
 def main() -> None:
     args  = parse_args()
     coins = args.coins.split(",")
+    tf = args.freq
+    pandas_freq, bpd = TIMEFRAMES[tf]
+
+    datasets_dir = DATASETS / tf
 
     FEATURES.mkdir(parents=True, 
                    exist_ok=True
@@ -550,40 +654,64 @@ def main() -> None:
                    exist_ok=True
                    )
 
-    aligner = TimeAligner(DATASETS)
-    master_index = aligner.build_master_index()
+    logger.info(f"=== Interwał docelowy: {tf} ({bpd} barów na dobę) ===")
+
+    aligner = TimeAligner(datasets_dir)
+    master_index = aligner.build_master_index(freq=pandas_freq)
 
     logger.info("=== OHLCV preprocessing + feature engineering ===")
-    ohlcv_features = step_ohlcv(coins)
+    ohlcv_features = step_ohlcv(coins,
+                                tf,
+                                bpd
+                                )
 
     if args.only_features:
         logger.info("Tryb --only-features")
         return
 
     logger.info("=== Macro preprocessing ===")
-    macro_sources = step_macro(master_index)
+    macro_sources = step_macro(master_index,
+                               tf,
+                               bpd
+                               )
 
     logger.info("=== Correlated assets ===")
-    corr_sources = step_correlated(master_index)
+    corr_sources = step_correlated(master_index,
+                                   tf,
+                                   bpd
+                                   )
 
     logger.info("=== On-chain ===")
-    onchain_sources = step_onchain(master_index)
+    onchain_sources = step_onchain(master_index,
+                                   tf,
+                                   bpd
+                                   )
 
     deriv_sources: dict = {}
     if not args.no_derivatives:
         logger.info("=== Derivatives ===")
-        deriv_sources = step_derivatives(master_index)
+        deriv_sources = step_derivatives(master_index,
+                                         tf,
+                                         bpd
+                                         )
     else:
         logger.info("===  Derivatives - pominiete (--no-derivatives) ===")
 
     logger.info("=== Event calendar ===")
-    event_calendar = step_event_calendar(master_index)
+    event_calendar = step_event_calendar(master_index,
+                                         tf
+                                         )
 
     logger.info("=== Market supplement (stablecoins, dominance) ===")
-    market_sources = step_market_supplement(master_index)
+    market_sources = step_market_supplement(master_index,
+                                            tf,
+                                            bpd
+                                            )
 
     logger.info("=== Sentiment ===")
-    sentiment_source = step_sentiment(master_index)
+    sentiment_source = step_sentiment(master_index,
+                                      pandas_freq
+                                      )
 
     logger.info("=== Align + target + train/val/test split ===")
     step_build_datasets(
@@ -596,10 +724,12 @@ def main() -> None:
         event_calendar=event_calendar,
         market_sources=market_sources,
         sentiment_source=sentiment_source,
-        master_index=master_index
+        master_index=master_index,
+        datasets_dir=datasets_dir,
+        bpd=bpd
         )
 
-    logger.info("Preprocessing gotowy. Pliki w data/processed/")
+    logger.info(f"Preprocessing gotowy. Pliki w {datasets_dir}")
 
 
 if __name__ == "__main__":

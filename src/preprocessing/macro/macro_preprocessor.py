@@ -28,21 +28,25 @@ InterpolationMethod = Literal["ffill",
 
 class MacroPreprocessor:
     def __init__(self, 
-                 processed_dir: Path = PROCESSED_DIR
+                 processed_dir: Path = PROCESSED_DIR,
+                 bars_per_day: int = 6,
+                 timeframe: str = "4h"
                  ) -> None:
         self.processed_dir = processed_dir
         self.processed_dir.mkdir(parents=True, 
                                  exist_ok=True
                                  )
+        self.bars_per_day = bars_per_day
+        self.timeframe = timeframe
 
-    def resample_to_4h(
+    def resample_to_target(
         self,
         df: pd.DataFrame,
         method: InterpolationMethod = "ffill",
         target_index: pd.DatetimeIndex | None = None
         ) -> pd.DataFrame:
         """
-        Metoda resampluje dane makro do interwału 4h.
+        Metoda resampluje dane makro do wybranego interwału
         """
         df = df.copy()
         df.index = pd.to_datetime(df.index, 
@@ -55,9 +59,9 @@ class MacroPreprocessor:
             df = df.reindex(df.index.union(target_index))
         else:
             new_index = pd.date_range(
-                start=df.index.min().floor("4h"),
-                end=df.index.max().ceil("4h"),
-                freq="4h",
+                start=df.index.min().floor(self.timeframe),
+                end=df.index.max().ceil(self.timeframe),
+                freq=self.timeframe,
                 tz="UTC",
             )
             df = df.reindex(df.index.union(new_index))
@@ -92,13 +96,13 @@ class MacroPreprocessor:
                        pd.Series
                        ] = {}
 
-        for col in df.columns:
-            if df[col].dtype in (float, int) or pd.api.types.is_numeric_dtype(df[col]):
-                shift_30d = 180 
-                pct_chg = df[col].pct_change(shift_30d)
-                new_cols[f"{col}_mom_30d"] = pct_chg
+        bpd = self.bars_per_day
+        shift_30d = 30 * bpd
+        win_12m = 360 * bpd
 
-                win_12m = 180 * 12
+        for col in df.columns:
+            if pd.api.types.is_numeric_dtype(df[col]):
+                new_cols[f"{col}_mom_30d"] = df[col].pct_change(shift_30d)
                 roll_mean = df[col].rolling(win_12m, 
                                             min_periods=30
                                             ).mean()
@@ -120,7 +124,7 @@ class MacroPreprocessor:
         method: InterpolationMethod = "ffill",
         add_derived: bool = True
         ) -> pd.DataFrame:
-        df = self.resample_to_4h(df, 
+        df = self.resample_to_target(df, 
                                  method=method, 
                                  target_index=target_index
                                  )
@@ -128,7 +132,7 @@ class MacroPreprocessor:
             df = self.add_macro_change_features(df)
         df = df.dropna(how="all")
 
-        path = self.processed_dir / f"{name}_4h.parquet"
+        path = self.processed_dir / f"{name}_{self.timeframe}.parquet"
         df.to_parquet(path)
-        print(f"[Macro] {name}: {len(df)} wierszy 4h -> {path}")
+        print(f"[Macro] {name}: {len(df)} wierszy {self.timeframe} -> {path}")
         return df

@@ -16,12 +16,14 @@ PROCESSED_DIR = Path("data/processed/features")
 
 class OHLCVPreprocessor:
     def __init__(self, 
-                 processed_dir: Path = PROCESSED_DIR
+                 processed_dir: Path = PROCESSED_DIR,
+                 timeframe: str = "4h"
                  ) -> None:
         self.processed_dir = processed_dir
         self.processed_dir.mkdir(parents=True, 
                                  exist_ok=True
                                  )
+        self.timeframe = timeframe
 
     def process(self, 
                 df: pd.DataFrame, 
@@ -31,7 +33,7 @@ class OHLCVPreprocessor:
                           ]:
         """
         Metoda przetwarza surowe dane OHLCV 1h.
-        Zwraca słownik: {'1h': df_1h, '4h': df_4h}.
+        Zwraca słownik: {'1h': df_1h, self.timeframe: df_tf}.
         """
         df = self._validate_and_sort(df)
         df = self._fill_missing_candles(df, 
@@ -40,17 +42,19 @@ class OHLCVPreprocessor:
         df = self._remove_outliers(df)
         df = self._add_returns(df)
 
-        df_4h = self._resample_to_4h(df)
+        df_tf = self._resample(df,
+                               self.timeframe
+                               )
 
         self._save(df, 
                    f"{symbol}_1h_clean"
                    )
-        self._save(df_4h, 
-                   f"{symbol}_4h_clean"
+        self._save(df_tf, 
+                   f"{symbol}_{self.timeframe}_clean"
                    )
 
         return {"1h": df, 
-                "4h": df_4h
+                self.timeframe: df_tf
                 }
 
     @staticmethod
@@ -132,9 +136,11 @@ class OHLCVPreprocessor:
         return df
 
     @staticmethod
-    def _resample_to_4h(df: pd.DataFrame) -> pd.DataFrame:
-        """Metoda agreguje dane 1h do 4h"""
-        df_4h = df.resample("4h").agg({
+    def _resample(df: pd.DataFrame,
+                  freq: str
+                  ) -> pd.DataFrame:
+        """Metoda agreguje dane 1h do self.timeframe"""
+        df_tf = df.resample(freq).agg({
             "open": "first",
             "high": "max",
             "low": "min",
@@ -143,8 +149,8 @@ class OHLCVPreprocessor:
             "log_return": "sum",
             "pct_return": lambda x: (1 + x).prod() - 1
             })
-        df_4h = df_4h.dropna(subset=["close"])
-        return df_4h
+        df_tf = df_tf.dropna(subset=["close"])
+        return df_tf
 
     def _save(self, 
               df: pd.DataFrame, 

@@ -1,0 +1,273 @@
+{
+  "run": {
+    "commit": "6bc427ac80d66bcae7575fea32b06c151c9f00d4",
+    "dirty": true,
+    "created_utc": "2026-08-16T18:13:03.956844+00:00",
+    "schema_fingerprint": "e8f1d06477fe",
+    "data_fingerprint": "41fa10fdd885",
+    "source_cutoff": "2025-12-31T00:00:00+00:00",
+    "recipe": {
+      "coin": "BTC",
+      "tf": "1d",
+      "include": [
+        "ohlcv"
+      ],
+      "hidden_size": 32,
+      "lstm_layers": 1,
+      "n_heads": 4,
+      "dropout": 0.1,
+      "embedding_dim_per_categorical": 8,
+      "encoder_days": 30,
+      "batch_size": 64,
+      "lr": 0.001,
+      "weight_decay": 0.0001,
+      "max_grad_norm": 1.0,
+      "epochs": 100,
+      "patience": 20,
+      "loss": "bce",
+      "es_metric": "val_loss",
+      "es_min_delta": 0.0001,
+      "seeds": [
+        1,
+        2,
+        3
+      ],
+      "num_workers": 0,
+      "amp": false,
+      "scheduler_factor": 0.5,
+      "scheduler_patience": 5,
+      "scheduler_min_lr": 1e-06
+    },
+    "ensemble_rule": "mean_prob_over_seeds",
+    "decision_protocol": {
+      "primary_subset": "pre_test",
+      "primary_pooled_advantage_must_be_positive": true,
+      "primary_min_positive_folds": 3,
+      "primary_total_folds": 4,
+      "full_min_positive_folds": 5,
+      "full_total_folds": 7
+    },
+    "horizon_bars": 1,
+    "original_test_partition_start": "2024-07-01T00:00:00+00:00",
+    "partial_run": false
+  },
+  "folds": [
+    {
+      "fold": 1,
+      "train_start": "2018-03-04T00:00:00+00:00",
+      "train_end": "2021-12-31T00:00:00+00:00",
+      "val_start": "2022-01-01T00:00:00+00:00",
+      "val_end": "2022-06-30T00:00:00+00:00",
+      "eval_start": "2022-07-01T00:00:00+00:00",
+      "eval_end": "2022-12-31T00:00:00+00:00",
+      "n_train_windows": 1225,
+      "n_train_optimized_examples": 1216,
+      "n_val_windows": 167,
+      "n_eval_windows": 156,
+      "p_train": 0.5281632542610168,
+      "per_seed": [
+        {
+          "seed": 1,
+          "checkpoint_epoch": 1,
+          "val_loss": 0.7003675699234009
+        },
+        {
+          "seed": 2,
+          "checkpoint_epoch": 8,
+          "val_loss": 0.6930099129676819
+        },
+        {
+          "seed": 3,
+          "checkpoint_epoch": 1,
+          "val_loss": 0.6977439522743225
+        }
+      ]
+    },
+    {
+      "fold": 2,
+      "train_start": "2018-03-04T00:00:00+00:00",
+      "train_end": "2022-06-30T00:00:00+00:00",
+      "val_start": "2022-07-01T00:00:00+00:00",
+      "val_end": "2022-12-31T00:00:00+00:00",
+      "eval_start": "2023-01-01T00:00:00+00:00",
+      "eval_end": "2023-06-30T00:00:00+00:00",
+      "n_train_windows": 1393,
+      "n_train_optimized_examples": 1344,
+      "n_val_windows": 156,
+      "n_eval_windows": 146,
+      "p_train": 0.5211772918701172,
+      "per_seed": [
+        {
+          "seed": 1,
+          "checkpoint_epoch": 2,
+          "val_loss": 0.7002913951873779
+        },
+        {
+          "seed": 2,
+          "checkpoint_epoch": 9,
+          "val_loss": 0.6939849853515625
+        },
+        {
+          "seed": 3,
+          "checkpoint_epoch": 15,
+          "val_loss": 0.6976311206817627
+        }
+      ]
+    },
+    {
+      "fold": 3,
+      "train_start": "2018-03-04T00:00:00+00:00",
+      "train_end": "2022-12-31T00:00:00+00:00",
+      "val_start": "2023-01-01T00:00:00+00:00",
+      "val_end": "2023-06-30T00:00:00+00:00",
+      "eval_start": "2023-07-01T00:00:00+00:00",
+      "eval_end": "2023-12-31T00:00:00+00:00",
+      "n_train_windows": 1550,
+      "n_train_optimized_examples": 1536,
+      "n_val_windows": 146,
+      "n_eval_windows": 134,
+      "p_train": 0.5135483741760254,
+      "per_seed": [
+        {
+          "seed": 1,
+          "checkpoint_epoch": 7,
+          "val_loss": 0.6831416487693787
+        },
+        {
+          "seed": 2,
+          "checkpoint_epoch": 9,
+          "val_loss": 0.6842793822288513
+        },
+        {
+          "seed": 3,
+          "checkpoint_epoch": 5,
+          "val_loss": 0.6821073889732361
+        }
+      ]
+    },
+    {
+      "fold": 4,
+      "train_start": "2018-03-04T00:00:00+00:00",
+      "train_end": "2023-06-30T00:00:00+00:00",
+      "val_start": "2023-07-01T00:00:00+00:00",
+      "val_end": "2023-12-31T00:00:00+00:00",
+      "eval_start": "2024-01-01T00:00:00+00:00",
+      "eval_end": "2024-06-30T00:00:00+00:00",
+      "n_train_windows": 1696,
+      "n_train_optimized_examples": 1664,
+      "n_val_windows": 134,
+      "n_eval_windows": 159,
+      "p_train": 0.5147405862808228,
+      "per_seed": [
+        {
+          "seed": 1,
+          "checkpoint_epoch": 15,
+          "val_loss": 0.6847979426383972
+        },
+        {
+          "seed": 2,
+          "checkpoint_epoch": 17,
+          "val_loss": 0.6840652227401733
+        },
+        {
+          "seed": 3,
+          "checkpoint_epoch": 8,
+          "val_loss": 0.6826215982437134
+        }
+      ]
+    },
+    {
+      "fold": 5,
+      "train_start": "2018-03-04T00:00:00+00:00",
+      "train_end": "2023-12-31T00:00:00+00:00",
+      "val_start": "2024-01-01T00:00:00+00:00",
+      "val_end": "2024-06-30T00:00:00+00:00",
+      "eval_start": "2024-07-01T00:00:00+00:00",
+      "eval_end": "2024-12-31T00:00:00+00:00",
+      "n_train_windows": 1831,
+      "n_train_optimized_examples": 1792,
+      "n_val_windows": 159,
+      "n_eval_windows": 160,
+      "p_train": 0.5150191187858582,
+      "per_seed": [
+        {
+          "seed": 1,
+          "checkpoint_epoch": 30,
+          "val_loss": 0.6840532422065735
+        },
+        {
+          "seed": 2,
+          "checkpoint_epoch": 9,
+          "val_loss": 0.6848541498184204
+        },
+        {
+          "seed": 3,
+          "checkpoint_epoch": 5,
+          "val_loss": 0.6864924430847168
+        }
+      ]
+    },
+    {
+      "fold": 6,
+      "train_start": "2018-03-04T00:00:00+00:00",
+      "train_end": "2024-06-30T00:00:00+00:00",
+      "val_start": "2024-07-01T00:00:00+00:00",
+      "val_end": "2024-12-31T00:00:00+00:00",
+      "eval_start": "2025-01-01T00:00:00+00:00",
+      "eval_end": "2025-06-30T00:00:00+00:00",
+      "n_train_windows": 1991,
+      "n_train_optimized_examples": 1984,
+      "n_val_windows": 160,
+      "n_eval_windows": 148,
+      "p_train": 0.5158212184906006,
+      "per_seed": [
+        {
+          "seed": 1,
+          "checkpoint_epoch": 1,
+          "val_loss": 0.6930760741233826
+        },
+        {
+          "seed": 2,
+          "checkpoint_epoch": 5,
+          "val_loss": 0.6926030516624451
+        },
+        {
+          "seed": 3,
+          "checkpoint_epoch": 24,
+          "val_loss": 0.683769166469574
+        }
+      ]
+    },
+    {
+      "fold": 7,
+      "train_start": "2018-03-04T00:00:00+00:00",
+      "train_end": "2024-12-31T00:00:00+00:00",
+      "val_start": "2025-01-01T00:00:00+00:00",
+      "val_end": "2025-06-30T00:00:00+00:00",
+      "eval_start": "2025-07-01T00:00:00+00:00",
+      "eval_end": "2025-12-31T00:00:00+00:00",
+      "n_train_windows": 2151,
+      "n_train_optimized_examples": 2112,
+      "n_val_windows": 148,
+      "n_eval_windows": 155,
+      "p_train": 0.5160390734672546,
+      "per_seed": [
+        {
+          "seed": 1,
+          "checkpoint_epoch": 25,
+          "val_loss": 0.6774153709411621
+        },
+        {
+          "seed": 2,
+          "checkpoint_epoch": 19,
+          "val_loss": 0.6809027194976807
+        },
+        {
+          "seed": 3,
+          "checkpoint_epoch": 27,
+          "val_loss": 0.6617377996444702
+        }
+      ]
+    }
+  ]
+}

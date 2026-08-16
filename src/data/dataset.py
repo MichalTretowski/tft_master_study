@@ -86,6 +86,7 @@ class CryptoDataset(Dataset):
             df = target_df
             self._first_prediction_index = 0
 
+        self._index = df.index
         schema.validate(df.columns)
 
         tag = f"{coin}/{split}"
@@ -149,9 +150,24 @@ class CryptoDataset(Dataset):
 
 
     @property
+    def window_timestamps(self) -> pd.DatetimeIndex:
+        """Timestampy okien w kolejnosci, w jakiej wydaje je DataLoader."""
+        return self._index[np.asarray(self._indices)]
+
+    @property
+    def window_targets(self) -> np.ndarray:
+        """Targety okien w tej samej kolejnosci. Moga zawierac -1 przy DSR."""
+        return self._targets[np.asarray(self._indices)]
+
+    @property
+    def class_targets(self) -> np.ndarray:
+        t = self.window_targets
+        return t[t >= 0]
+    
+
+    @property
     def class_prior(self) -> float:
-        targets = self._targets[self._indices]
-        targets = targets[targets >= 0]
+        targets = self.class_targets
 
         if len(targets) == 0:
             raise ValueError(
@@ -160,10 +176,7 @@ class CryptoDataset(Dataset):
 
         return float(targets.mean())
 
-    @property
-    def class_targets(self) -> np.ndarray:
-        t = self._targets[np.asarray(self._indices)]
-        return t[t >= 0]
+
 
     
     def __getitem__(self,

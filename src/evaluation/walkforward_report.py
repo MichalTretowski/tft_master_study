@@ -92,6 +92,14 @@ def _check_integrity(pred: pd.DataFrame, meta: dict) -> None:
             "- zakresy okna sie nakladaja."
             )
 
+    eval_rows = pred[pred["segment"] == "eval"]
+    if eval_rows.duplicated(["seed", "timestamp"]).any():
+        raise ValueError(
+            "Ten sam timestamp eval wystepuje w wiecej niz jednym foldzie "
+            "- okna oceny nie sa rozlaczne."
+            )
+
+
     targets = set(np.unique(pred["target"].to_numpy()))
     if not targets <= {0.0, 1.0}:
         raise ValueError(f"Targety nie sa binarne: {sorted(targets)}")

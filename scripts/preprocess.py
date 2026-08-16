@@ -37,6 +37,8 @@ TIMEFRAMES = {
     "1d": ("1D", 1)
     }
 
+FORECAST_HORIZON_BARS = 1
+
 _SENT_SCORES = ["reddit_sentiment_score",
                 "sentiment_score_combined",
                 "twitter_sentiment_score",
@@ -529,7 +531,7 @@ def step_market_supplement(master_index: pd.DatetimeIndex,
                                   method="ffill", 
                                   target_index=master_index
                                   )
-        df_tf = df_tf.ffill().bfill()
+        df_tf = df_tf.ffill()
         df_tf.to_parquet(FEATURES / f"market_dominance_{tf}.parquet")
         logger.info(f"[Market] Market dominance: {len(df_tf)} wierszy {tf}")
         sources["market_dominance"] = df_tf
@@ -552,7 +554,8 @@ def step_build_datasets(
     sentiment_source: pd.DataFrame | None = None,
     master_index: pd.DatetimeIndex | None = None,
     datasets_dir: Path | None = None,
-    bpd: int = 6
+    bpd: int = 6,
+    horizon_bars: int = FORECAST_HORIZON_BARS
     ) -> None:
     """Funkcja łączy wszystkie zrodla, dodaje target, zapisuje splity"""
     aligner = TimeAligner(datasets_dir if datasets_dir is not None else DATASETS)
@@ -597,20 +600,20 @@ def step_build_datasets(
         aligned = aligner.add_target(
             aligned,
             price_col="close",
-            horizon_bars=bpd,
+            horizon_bars=horizon_bars,
             dead_zone_pct=0.003
             )
 
         n_before = len(aligned)
-        aligned = aligned.dropna(subset=["close", 
-                                         "target"
-                                         ])
+        aligned = aligned.dropna(subset=["close"])
+
         logger.info(f"[Dataset] {coin}: {n_before} -> {len(aligned)} wierszy po dropna(close, target)")
 
         dataset = aligner.build_coin_dataset(
             aligned,
             coin=coin,
-            target_col="target"
+            target_col="target",
+            purge_bars=horizon_bars
             )
         logger.info(
             f"[Dataset] {coin}: train={len(dataset.train)} | "
@@ -726,7 +729,8 @@ def main() -> None:
         sentiment_source=sentiment_source,
         master_index=master_index,
         datasets_dir=datasets_dir,
-        bpd=bpd
+        bpd=bpd,
+        horizon_bars=FORECAST_HORIZON_BARS
         )
 
     logger.info(f"Preprocessing gotowy. Pliki w {datasets_dir}")

@@ -45,7 +45,10 @@ class TemporalFusionTransformer(nn.Module):
         super().__init__()
         self.schema = schema
         self.hidden_size = hidden_size
-        self.output_mode = output_mode
+        self.lstm_layers = lstm_layers
+        self.n_heads = n_heads
+        self.dropout = dropout
+        self.embedding_dim_per_categorical = embedding_dim_per_categorical
 
         n_coins = 2
         self.coin_embedding = nn.Embedding(n_coins, 
@@ -155,7 +158,6 @@ class TemporalFusionTransformer(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_size // 2, 1)
             )
-        self.output_activation = nn.Tanh() if output_mode == "position" else nn.Sigmoid()
 
 
     def forward(
@@ -237,11 +239,22 @@ class TemporalFusionTransformer(nn.Module):
             context=ctx_enrich.unsqueeze(1).expand(-1, lstm_out.size(1), -1)
             )
 
+        seq_len = enriched.size(1)
+        causal_mask = torch.tril(
+            torch.ones(
+                seq_len,
+                seq_len,
+                dtype=torch.bool,
+                device=enriched.device
+                )
+            )
 
-        attn_out, attn_weights = self.attention(enriched, 
-                                                enriched, 
-                                                enriched
-                                                )
+        attn_out, attn_weights = self.attention(
+            enriched,
+            enriched,
+            enriched,
+            mask=causal_mask
+            )
         attn_out = self.attention_gate_add_norm(attn_out, 
                                                 residual=enriched
                                                 )
@@ -262,10 +275,10 @@ class TemporalFusionTransformer(nn.Module):
                           ]
 
         final = torch.cat([enc_last, dec_last], dim=-1)
-        output = self.output_activation(self.output_head(final))
+        logit = self.output_head(final)
 
         return {
-            "output": output,
+            "logit": logit,
             "encoder_weights": enc_weights,
             "attention_weights": attn_weights
             }

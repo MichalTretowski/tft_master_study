@@ -74,7 +74,7 @@ TECHNICAL_PATTERNS = [
     ]
 
 FEATURE_GROUPS: dict[str, list[str]] = {
-    "target": ["target"],
+    "target": ["target", "forward_log_return"],
     "static": ["coin_id"],
     "time": ["hour_sin", 
              "hour_cos", 
@@ -151,6 +151,7 @@ def assign_groups(columns) -> dict[str, str]:
 
     if unknown:
         raise UnclassifiedColumnError(
+            "Kolumny bez przypisanej grupy: "
             + ", ".join(sorted(unknown))
             + "\nDopisz wzorzec w FEATURE_GROUPS."
             )

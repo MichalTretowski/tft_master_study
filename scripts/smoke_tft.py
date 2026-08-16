@@ -37,10 +37,6 @@ def main() -> None:
                    type=int, 
                    default=128
                    )
-    p.add_argument("--mode", 
-                   default="position",
-                   choices=["position", "probability"]
-                   )
     args = p.parse_args()
 
     bpd = 6 if args.tf == "4h" else 1
@@ -64,8 +60,7 @@ def main() -> None:
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     model = TemporalFusionTransformer(
         schema=schema,
-        hidden_size=args.hidden,
-        output_mode=args.mode
+        hidden_size=args.hidden
         ).to(dev)
 
     n_par = sum(p.numel() for p in model.parameters())
@@ -89,14 +84,16 @@ def main() -> None:
                 )
 
     print("")
-    print(f"[Wyjscie] output {tuple(out['output'].shape)}")
+    pos = torch.tanh(out["logit"])
+
+    print(f"[Wyjscie] logit {tuple(out['logit'].shape)}")
     print(f"[Wyjscie] encoder_weights {tuple(out['encoder_weights'].shape)}")
     print(f"[Wyjscie] attention_weights "
           f"{tuple(out['attention_weights'].shape)}")
-    print(f"[Wyjscie] zakres output: {out['output'].min():.3f} "
-          f".. {out['output'].max():.3f}")
+    print(f"[Wyjscie] zakres pozycji: {pos.min():.3f} "
+          f".. {pos.max():.3f}")
 
-    loss = out["output"].mean()
+    loss = pos.mean()
     loss.backward()
     print("[Backward] OK")
 

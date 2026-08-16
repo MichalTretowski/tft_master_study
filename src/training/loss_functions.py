@@ -67,12 +67,25 @@ class DifferentiableSharpeRatio(nn.Module):
         positions = positions.squeeze(-1) if positions.dim() > 1 else positions
         price_returns = price_returns.squeeze(-1) if price_returns.dim() > 1 else price_returns
 
-        position_changes = torch.abs(positions[1:] - positions[:-1])
-        costs = position_changes * self.transaction_cost
+        return self._sharpe(
+            self.portfolio_returns(positions, price_returns)
+            )
 
-        portfolio_returns = positions[:-1] * price_returns[1:] - costs
+    def portfolio_returns(
+        self,
+        positions: torch.Tensor,
+        price_returns: torch.Tensor
+        ) -> torch.Tensor:
+        """Zwroty portfela: pozycja i zwrot z tego samego momentu."""
+        turnover = torch.cat([
+            positions[:1].abs(),          # wejscie z pozycji zerowej
+            (positions[1:] - positions[:-1]).abs()
+            ])
 
-        return self._sharpe(portfolio_returns)
+        return (
+            positions * price_returns
+            - turnover * self.transaction_cost
+            )
 
     def _sharpe(self, 
                 returns: torch.Tensor

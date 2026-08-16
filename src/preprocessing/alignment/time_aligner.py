@@ -18,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import NamedTuple
 
+import numpy as np
 import pandas as pd
 
 PROCESSED_DIR = Path("data/processed/datasets")
@@ -130,7 +131,8 @@ class TimeAligner:
         aligned_df: pd.DataFrame,
         coin: str,
         target_col: str,
-        drop_na_subset: list[str] | None = None
+        drop_na_subset: list[str] | None = None,
+        purge_bars: int = 1
         ) -> AlignedDataset:
         """
         Metoda buduje finalny dataset dla jednego coina z podziałem train/val/test.
@@ -142,11 +144,31 @@ class TimeAligner:
         if drop_na_subset:
             df = df.dropna(subset=drop_na_subset)
 
-        feature_cols = [c for c in df.columns if c != target_col]
+        feature_cols = [
+            c for c in df.columns
+            if c not in {target_col, "forward_log_return"}
+            ]
 
-        train = df[SPLIT_DATES["train_start"]:SPLIT_DATES["train_end"]]
-        val = df[SPLIT_DATES["val_start"]:SPLIT_DATES["val_end"]]
-        test = df[SPLIT_DATES["test_start"]:SPLIT_DATES["test_end"]]
+        def split_with_purge(start: str, end: str) -> pd.DataFrame:
+            out = df.loc[start:end].copy()
+
+            # Target t uzywa ceny po horyzoncie — nie moze przekraczac splitu.
+            if purge_bars > 0 and len(out) >= purge_bars:
+                tail = out.index[-purge_bars:]
+                out.loc[tail, target_col] = pd.NA
+                out.loc[tail, "forward_log_return"] = float("nan")
+
+            return out
+
+        train = split_with_purge(
+            SPLIT_DATES["train_start"], SPLIT_DATES["train_end"]
+            )
+        val = split_with_purge(
+            SPLIT_DATES["val_start"], SPLIT_DATES["val_end"]
+            )
+        test = split_with_purge(
+            SPLIT_DATES["test_start"], SPLIT_DATES["test_end"]
+            )
 
         print(f"[Aligner] {coin} dataset: "
               f"train={len(train)}, val={len(val)}, test={len(test)} świec 4h | "
@@ -186,7 +208,10 @@ class TimeAligner:
                        Redukuje szum w płaskich rynkach.
         """
         df = df.copy()
-        future_return = df[price_col].shift(-horizon_bars) / df[price_col] - 1
+        df["forward_log_return"] = np.log(
+            df[price_col].shift(-horizon_bars) / df[price_col]
+            )
+        future_return = np.expm1(df["forward_log_return"])
 
         df["target"] = pd.NA
         df.loc[future_return > dead_zone_pct, "target"] = 1

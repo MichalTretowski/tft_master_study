@@ -103,9 +103,28 @@ def parse_args() -> argparse.Namespace:
                    type=int, 
                    default=20
                    )
-    p.add_argument("--es-metric", 
-                   default="sharpe",
-                   choices=["sharpe", "dir_acc"]
+    p.add_argument("--es-metric",
+                   default=None,
+                   choices=["sharpe", "dir_acc", "val_loss"]
+                   )
+    p.add_argument("--es-min-delta",
+                   type=float,
+                   default=None
+                   )
+    p.add_argument("--min-position-std",
+                   type=float,
+                   default=0.02
+                   )
+    p.add_argument("--num-workers",
+                   type=int,
+                   default=0
+                   )
+    p.add_argument("--diag-every",
+                   type=int,
+                   default=50
+                   )
+    p.add_argument("--amp",
+                   action="store_true"
                    )
 
     p.add_argument("--include", 
@@ -120,10 +139,7 @@ def parse_args() -> argparse.Namespace:
                    type=int, 
                    default=42
                    )
-    p.add_argument("--sanity-check", 
-                   action="store_true",
-                   help="cel - test poprawnosci pipeline'u"
-                   )
+
     p.add_argument("--device", 
                    default=None
                    )
@@ -148,8 +164,7 @@ def build_model(args,
             hidden_size=args.hidden_size,
             lstm_layers=args.lstm_layers,
             n_heads=args.n_heads,
-            dropout=args.dropout,
-            output_mode="position"
+            dropout=args.dropout
             )
 
     from src.models.baselines.lstm_baseline import VanillaLSTM
@@ -185,12 +200,17 @@ def main() -> None:
         )
     schema.summary()
 
+    es_metric = args.es_metric or (
+        "val_loss" if args.loss == "bce" else "sharpe"
+        )
+
     loaders = build_dataloaders(
         coin=args.coin,
         schema=schema,
         tf=args.tf,
         batch_size=args.batch_size,
-        sanity_target=args.sanity_check
+        num_workers=args.num_workers,
+        loss_mode=args.loss
         )
 
     model = build_model(args, schema)
@@ -221,10 +241,10 @@ def main() -> None:
         weight_decay=args.weight_decay
         )
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 
-        mode="max", 
-        factor=0.5, 
-        patience=5, 
+        optimizer,
+        mode="min" if es_metric == "val_loss" else "max",
+        factor=0.5,
+        patience=5,
         min_lr=1e-6
         )
 
@@ -237,9 +257,13 @@ def main() -> None:
         transaction_cost=args.transaction_cost,
         position_penalty=args.position_penalty,
         early_stopping_patience=args.patience,
-        early_stopping_metric=args.es_metric,
+        early_stopping_metric=es_metric,
+        early_stopping_min_delta=args.es_min_delta,
+        min_position_std=args.min_position_std,
         experiment_name=name,
-        device=args.device
+        device=args.device,
+        amp=args.amp,
+        diag_every=args.diag_every
         )
 
     logger.info(

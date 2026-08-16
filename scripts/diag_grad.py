@@ -55,9 +55,9 @@ print(f"na kolumne std: min={obs.std(dim=(0, 1)).min():.5f} "
       f"max={obs.std(dim=(0, 1)).max():.3f}")
 
 with torch.no_grad():
-    out_real = model(obs, kf, sc)["output"]
-    out_zero = model(torch.zeros_like(obs), kf, sc)["output"]
-    out_rand = model(torch.randn_like(obs), kf, sc)["output"]
+    out_real = torch.tanh(model(obs, kf, sc)["logit"])
+    out_zero = torch.tanh(model(torch.zeros_like(obs), kf, sc)["logit"])
+    out_rand = torch.tanh(model(torch.randn_like(obs), kf, sc)["logit"])
 
 print("")
 print("--- wrazliwosc wyjscia na observed ---")
@@ -68,7 +68,7 @@ print(f"|real-zero| mean={ (out_real - out_zero).abs().mean():.6f}")
 print(f"|real-rand| mean={ (out_real - out_rand).abs().mean():.6f}")
 
 model.train()
-out = model(obs, kf, sc)["output"]
+out = torch.tanh(model(obs, kf, sc)["logit"])
 out.mean().backward()
 
 print("")

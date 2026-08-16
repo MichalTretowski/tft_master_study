@@ -7,9 +7,11 @@ DataLoader: train/val/test dla jednego coina.
 from __future__ import annotations
 
 import pickle
+from hashlib import sha256
 from pathlib import Path
 from typing import TypedDict
 
+import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
@@ -23,6 +25,10 @@ class DataLoaders(TypedDict):
     val: DataLoader
     test: DataLoader
 
+def _columns_fingerprint(columns) -> str:
+    payload = "\x1f".join(columns).encode("utf-8")
+    return sha256(payload).hexdigest()[:12]
+
 
 def build_dataloaders(
     coin: str,
@@ -33,15 +39,15 @@ def build_dataloaders(
     datasets_dir: Path = DATASETS_DIR,
     scalers_dir: Path = SCALERS_DIR,
     pin_memory: bool = True,
-    sanity_target: bool = False
+    loss_mode: str = "bce"
     ) -> DataLoaders:
     scalers_dir.mkdir(parents=True, 
                       exist_ok=True
                       )
-    n_obs = len(schema.observed_reals)
-    n_known = len(schema.known_reals)
-    scaler_path = scalers_dir / f"{coin}_{tf}_obs{n_obs}.pkl"
-    known_path = scalers_dir / f"{coin}_{tf}_known{n_known}.pkl"
+    obs_fp = _columns_fingerprint(schema.observed_reals)
+    known_fp = _columns_fingerprint(schema.known_reals)
+    scaler_path = scalers_dir / f"{coin}_{tf}_obs_{obs_fp}.pkl"
+    known_path = scalers_dir / f"{coin}_{tf}_known_{known_fp}.pkl"
 
     if scaler_path.exists() and known_path.exists():
         with open(scaler_path, "rb") as f:
@@ -53,14 +59,14 @@ def build_dataloaders(
         from sklearn.preprocessing import RobustScaler
 
         train_raw = CryptoDataset(
-            coin=coin, 
-            split="train", 
+            coin=coin,
+            split="train",
             schema=schema,
-            scaler=None, 
+            scaler=None,
             known_scaler=None,
-            tf=tf, 
+            tf=tf,
             datasets_dir=datasets_dir,
-            sanity_target=sanity_target
+            keep_nans=True
             )
         
         scaler = RobustScaler(quantile_range=(5, 95))
@@ -75,44 +81,61 @@ def build_dataloaders(
             pickle.dump(known_scaler, f)
         print(f"[DataLoader] Scaler dopasowany -> {scalers_dir}")
 
-    datasets = {
-        split: CryptoDataset(
-            coin=coin, 
-            split=split, 
-            schema=schema,
-            scaler=scaler, 
-            known_scaler=known_scaler,
-            tf=tf, 
-            datasets_dir=datasets_dir,
-            sanity_target=sanity_target
-            )
-        for split in ("train", "val", "test")
+    contexts = {
+        "train": None,
+        "val": pd.read_parquet(
+            datasets_dir / tf / f"{coin}_train.parquet"
+            ).sort_index().tail(schema.encoder_length),
+        "test": pd.read_parquet(
+            datasets_dir / tf / f"{coin}_val.parquet"
+            ).sort_index().tail(schema.encoder_length)
         }
 
-    use_pin = pin_memory and torch.cuda.is_available()
+    require_class_target = loss_mode == "bce"
+
+    datasets = {}
+    for split in ("train", "val", "test"):
+        datasets[split] = CryptoDataset(
+            coin=coin,
+            split=split,
+            schema=schema,
+            scaler=scaler,
+            known_scaler=known_scaler,
+            tf=tf,
+            datasets_dir=datasets_dir,
+            require_class_target=require_class_target,
+            context_df=contexts[split]
+            )
+
+    loader_kwargs = {
+        "num_workers": num_workers,
+        "pin_memory": pin_memory and torch.cuda.is_available()
+        }
+    if num_workers > 0:
+        loader_kwargs.update(
+            persistent_workers=True,
+            prefetch_factor=2
+            )
 
     loaders: DataLoaders = {
         "train": DataLoader(
             datasets["train"],
             batch_size=batch_size,
             shuffle=False,
-            num_workers=num_workers,
-            pin_memory=use_pin,
-            drop_last=True
+            drop_last=True,
+            **loader_kwargs
             ),
         "val": DataLoader(
             datasets["val"],
             batch_size=batch_size,
             shuffle=False,
-            num_workers=num_workers,
-            pin_memory=use_pin
+            **loader_kwargs
             ),
         "test": DataLoader(
             datasets["test"],
             batch_size=batch_size,
             shuffle=False,
-            num_workers=num_workers,
-            pin_memory=use_pin
+            **loader_kwargs
             )
             }
 

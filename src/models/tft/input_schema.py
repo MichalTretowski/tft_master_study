@@ -72,15 +72,14 @@ class TFTInputSchema:
         known = [c for g in KNOWN_GROUPS for c in grouped.get(g, [])]
         observed = [c for g in chosen for c in grouped.get(g, [])]
 
-        target_cols = grouped.get("target", [])
-        if not target_cols:
+        if "target" not in grouped.get("target", []):
             raise ValueError("Brak kolumny 'target' w datasecie")
 
         return cls(
             static_categoricals=sorted(static),
             known_reals=sorted(known),
             observed_reals=sorted(observed),
-            target=target_cols[0],
+            target="target",
             bars_per_day=bars_per_day,
             encoder_days=encoder_days,
             source_groups=chosen

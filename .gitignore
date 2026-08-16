@@ -2,7 +2,7 @@
 # Środowisko Python
 # =============================================
 .venv/
-__pacache__/
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
